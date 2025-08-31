@@ -1,84 +1,50 @@
-name: Build and Release APKs
+name: Flutter Build APK
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag to create release for (e.g., v1.0.0)'
-        required: true
-        default: 'v1.0.0'
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Checkout source
+        uses: actions/checkout@v4
 
-      - name: Set up Java
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'zulu'
-          java-version: '17'
-
-      - name: Set up Flutter
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.32.8'
-          channel: 'stable'
+          flutter-version: "3.35.2"
 
-      - name: Get dependencies
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.pub-cache
+            build
+          key: ${{ runner.os }}-flutter-${{ hashFiles('pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-
+
+      - name: Install dependencies
         run: flutter pub get
 
-      - name: Build universal APK
+      - name: Analyze project
+        run: flutter analyze || true
+
+      - name: Run tests (optional)
+        run: flutter test || true
+
+      # Build a single release APK (universal)
+      - name: Build single release APK
         run: flutter build apk --release
 
-      - name: Build split APKs
-        run: flutter build apk --split-per-abi --release
-
-      - name: Rename APKs
-        run: |
-          mkdir release
-          copy build\app\outputs\flutter-apk\app-release.apk release\proxycloud-universal.apk
-          copy build\app\outputs\flutter-apk\app-armeabi-v7a-release.apk release\proxycloud-armeabi-v7a.apk
-          copy build\app\outputs\flutter-apk\app-arm64-v8a-release.apk release\proxycloud-arm64-v8a.apk
-          copy build\app\outputs\flutter-apk\app-x86_64-release.apk release\proxycloud-x86_64.apk
-        shell: cmd
-
-      - name: Detect tag
-        id: tag
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "TAG_NAME=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          else
-            echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          fi
-        shell: bash
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ steps.tag.outputs.TAG_NAME }}
-          name: Release ${{ steps.tag.outputs.TAG_NAME }}
-          draft: false
-          prerelease: false
-          files: |
-            release/proxycloud-universal.apk
-            release/proxycloud-armeabi-v7a.apk
-            release/proxycloud-arm64-v8a.apk
-            release/proxycloud-x86_64.apk
-          body: |
-            ## Installation
-            
-            ### Download
-            
-            | Architecture | Download Link |
-            |-------------|---------------|
-            | Universal   | <a href="https://github.com/code3-dev/ProxyCloud/releases/latest/download/proxycloud-universal.apk"><img src="https://img.shields.io/badge/Android-Universal-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android Universal"></a> |
-            | armeabi-v7a | <a href="https://github.com/code3-dev/ProxyCloud/releases/latest/download/proxycloud-armeabi-v7a.apk"><img src="https://img.shields.io/badge/Android-armeabi--v7a-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android armeabi-v7a"></a> |
-            | arm64-v8a   | <a href="https://github.com/code3-dev/ProxyCloud/releases/latest/download/proxycloud-arm64-v8a.apk"><img src="https://img.shields.io/badge/Android-arm64--v8a-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android arm64-v8a"></a> |
-            | x86_64      | <a href="https://github.com/code3-dev/ProxyCloud/releases/latest/download/proxycloud-x86_64.apk"><img src="https://img.shields.io/badge/Android-x86_64-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android x86_64"></a> |
-
+          name: app-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
